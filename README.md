@@ -1,6 +1,9 @@
 # Sparsity Aware Algorithm for Extremely Imbalanced Classification
 Sparsity Aware Method for Imbalanced Dataset
 
+# Program Run Example
+python process.py
+
 # Dataset
 UCI Dataset: 
 UC Irvine Machine Learning Repository, http://archive.ics.uci.edu/ml/, 2009.
