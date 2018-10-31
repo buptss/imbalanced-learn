@@ -8,7 +8,7 @@ from ._random_over_sampler import RandomOverSampler
 from ._smote import SMOTE
 from ._smote import BorderlineSMOTE
 from ._smote import SVMSMOTE
-from ._smote import SMOTENC
+from ._sparsesmote import SparseSMOTE
 
 __all__ = ['ADASYN', 'RandomOverSampler',
-           'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SMOTENC']
+           'SMOTE', 'BorderlineSMOTE', 'SVMSMOTE', 'SparseSMOTE']
