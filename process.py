@@ -1,20 +1,18 @@
 #!/usr/bin/env python
 # encoding: utf-8
 
-IS_LOCAL = True
-
 from xgboost import XGBClassifier as xgb
 import pandas as pd
-if IS_LOCAL:
-    # import sys
-    # sys.path.append("..")
-    from imblearn.metrics import geometric_mean_score
-    # from imbalancedlearn.imblearn.datasets import fetch_datasets
-    from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE, SparseSMOTE
-else:
-    from imblearn.metrics import geometric_mean_score
-    from imblearn.datasets import fetch_datasets
-    from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE
+# if IS_LOCAL:
+# import sys
+# sys.path.append("..")
+from imblearn.metrics import geometric_mean_score
+# from imbalancedlearn.imblearn.datasets import fetch_datasets
+from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE, SparseSMOTE
+# else:
+#     from imblearn.metrics import geometric_mean_score
+#     from imblearn.datasets import fetch_datasets
+#     from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE
 
 import numpy as np
 from sklearn.metrics import roc_curve, auc, recall_score, precision_score, f1_score, roc_auc_score, average_precision_score
