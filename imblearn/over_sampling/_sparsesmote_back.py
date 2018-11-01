@@ -26,7 +26,7 @@ from ..utils._docstring import _random_state_docstring
 
 # FIXME: remove in 0.6
 SMOTE_KIND = ('regular', 'borderline1', 'borderline2', 'svm')
-SparseRatioThreshold = 0.9
+SparseRatioThreshold = 0.45
 import math
 TEST = True
 # SparseRatioThreshold = 0.5 :0.795
@@ -57,15 +57,10 @@ class SparseBaseSMOTE(BaseOverSampler):
     def _deal_with_instance(self, X, row, step, nn_data, nn_num, col):
         sample = X[row] - step * (
                 X[row] - nn_data[nn_num[row, col]])
-        # Sparseness of raw data sample
+        # 原始数据样本中0.0的个数
         num = len(X[row][(X[row] == 0.0)])
         InstanceSparseRatio = num * 1.0 / len(X[row])
-        # Sparseness of the nearest neighbor samples
-        neighbor = nn_data[nn_num[row, col]]
-        zero_num = len(neighbor[(neighbor == 0.0)])
-        neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
-
-        if InstanceSparseRatio + neighborSparsityRatio > SparseRatioThreshold:
+        if InstanceSparseRatio > SparseRatioThreshold:
             # if InstanceSparseRatio < dataset_sparse_ratio:
             sample = X[row]
         # for loc in range(len(X_new[i])):
@@ -119,17 +114,13 @@ class SparseBaseSMOTE(BaseOverSampler):
             Target values for synthetic samples.
 
         """
+        n_samples = 3964
         random_state = check_random_state(self.random_state)
-
-        # Select size neighbors from all minority neighbors
-        size = len(X)
         samples_indices = random_state.randint(
-            low=0, high=len(nn_num.flatten()), size=size)
-        steps = step_size * random_state.uniform(size=size)
-        # rows = np.floor_divide(samples_indices, nn_num.shape[1])
-        # cols = np.mod(samples_indices, nn_num.shape[1])
-        rows = np.arange(0, len(X), 1)
-        cols = np.random.randint(0, 5, size=size)
+            low=0, high=len(nn_num.flatten()), size=n_samples)
+        steps = step_size * random_state.uniform(size=n_samples)
+        rows = np.floor_divide(samples_indices, nn_num.shape[1])
+        cols = np.mod(samples_indices, nn_num.shape[1])
 
         num_instances = 0
         if sparse.issparse(X):
@@ -172,9 +163,9 @@ class SparseBaseSMOTE(BaseOverSampler):
                     num_instances += 1
 
         y_new = np.array([y_type] * num_instances, dtype=y_dtype)
-        # print("num_instances, n_samples")
-        # print(num_instances, n_samples)
-        # print("sum_info", sum_info, "num_sample:", num_sample)
+        print("num_instances, n_samples")
+        print(num_instances, n_samples)
+        print("sum_info", sum_info, "num_sample:", num_sample)
         if sparse.issparse(X):
             return (sparse.csr_matrix((samples, (row_indices, col_indices)),
                                       [num_instances, X.shape[1]],

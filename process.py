@@ -59,10 +59,10 @@ def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_met
 def process(object):
     train_X, train_y, test_X, test_y = object['train_X'], object['train_y'], object['test_X'], object['test_y']
     # init sample method
-    # sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
-    #                   'SVMSMOTE', 'ADASYN', 'No Sample']
+    sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
+                      'SVMSMOTE', 'ADASYN', 'No Sample']
     # sample_methods = ['Sparse SMOTE', 'random']
-    sample_methods = ['Sparse SMOTE']
+    # sample_methods = ['Sparse SMOTE']
     # sample_methods = ['random', 'smote', 'adasyn', 'mwmote']
     metrics_dict = {}
     time_info = {}
@@ -198,9 +198,9 @@ if __name__ == '__main__':
     # names = ['optical_digits']
     # names = ['ecoli', 'optical_digits']
     # test dataset
-    datasets = ['webpage']
+    # datasets = ['webpage']
     # sparsity ratio >= 0.5
-    # datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
+    datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
 
     # sparsity ratio < 0.5
     # datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
