@@ -125,8 +125,8 @@ class SparseBaseSMOTE(BaseOverSampler):
 
         # Select size neighbors from all minority neighbors
         size = len(X)
-        samples_indices = random_state.randint(
-            low=0, high=len(nn_num.flatten()), size=size)
+        # samples_indices = random_state.randint(
+        #     low=0, high=len(nn_num.flatten()), size=size)
         steps = step_size * random_state.uniform(size=size)
         # rows = np.floor_divide(samples_indices, nn_num.shape[1])
         # cols = np.mod(samples_indices, nn_num.shape[1])
@@ -143,9 +143,6 @@ class SparseBaseSMOTE(BaseOverSampler):
                     # sample_dataset_ratio = (1 - InstanceSparseRatio)/(1 - dataset_sparse_ratio)
                     # like adasyn result:
                     sample_dataset_ratio = (1 - InstanceSparseRatio)/dataset_sparse_ratio * n_samples
-                    # print(sample_dataset_ratio)
-                    # if sample_dataset_ratio < 0.5:
-                    #     continue
                     for j in range(0, int(math.floor(sample_dataset_ratio)), 1):
                     # if sample_dataset_ratio > 2:
                         row_indices += [i] * len(sample.indices)
@@ -153,7 +150,6 @@ class SparseBaseSMOTE(BaseOverSampler):
                         samples += sample.data.tolist()
                         num_instances += 1
         else:
-            # X_new = np.zeros((n_samples, X.shape[1]), dtype=X.dtype)
             X_new = []
             sum_info = 0
             num_sample = 0
