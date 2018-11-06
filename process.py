@@ -3,16 +3,10 @@
 
 from xgboost import XGBClassifier as xgb
 import pandas as pd
-# if IS_LOCAL:
-# import sys
-# sys.path.append("..")
+from matplotlib.ticker import NullFormatter
 from imblearn.metrics import geometric_mean_score
 # from imbalancedlearn.imblearn.datasets import fetch_datasets
 from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE, SparseSMOTE
-# else:
-#     from imblearn.metrics import geometric_mean_score
-#     from imblearn.datasets import fetch_datasets
-#     from imblearn.over_sampling import RandomOverSampler, SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE
 
 import numpy as np
 from sklearn.metrics import roc_curve, auc, recall_score, precision_score, f1_score, roc_auc_score, average_precision_score
@@ -21,6 +15,7 @@ import warnings
 import MWMOTE
 from datetime import datetime
 import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings(action='ignore', category=DeprecationWarning)
@@ -34,6 +29,7 @@ SHOW_FEATURE = False
 SHOW_METRICS = True
 SHOW_DURATION_TIME = False
 SHOW_AUC_ROC_PLOT = False
+SHOW_TSNE = False
 
 
 def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_method):
@@ -59,22 +55,42 @@ def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_met
 def process(object):
     train_X, train_y, test_X, test_y = object['train_X'], object['train_y'], object['test_X'], object['test_y']
     # init sample method
-    sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
-                      'SVMSMOTE', 'ADASYN', 'No Sample']
-    # sample_methods = ['Sparse SMOTE', 'random']
+    # sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
+    #                   'SVMSMOTE', 'ADASYN', 'No Sample']
+    sample_methods = ['Sparse SMOTE', 'random', 'No Sample']
     # sample_methods = ['Sparse SMOTE']
     # sample_methods = ['random', 'smote', 'adasyn', 'mwmote']
     metrics_dict = {}
     time_info = {}
+
+    if SHOW_TSNE:
+        n_components = 2
+        perplexity = 50
+        (fig, subplots) = plt.subplots(1, len(sample_methods), figsize=(15, 8))
+        num_plot = 0
     for sample_method in sample_methods:
         # before
         before_time = datetime.now()
+        ax = subplots[num_plot]
+        num_plot += 1
         # over sample
         X_resampled, y_resampled = oversample(train_X, train_y, method=sample_method)
+
+        if SHOW_TSNE:
+            tsne = TSNE(n_components=n_components, init='random',
+                                 random_state=0, perplexity=perplexity)
+            Y_tsne = tsne.fit_transform(X_resampled)
+            ax.set_title("sample_method=%s" % sample_method)
+            ax.scatter(Y_tsne[y_resampled == -1, 0], Y_tsne[y_resampled == -1, 1], c="r")
+            ax.scatter(Y_tsne[y_resampled == 1, 0], Y_tsne[y_resampled == 1, 1], c="g")
+            ax.xaxis.set_major_formatter(NullFormatter())
+            ax.yaxis.set_major_formatter(NullFormatter())
+            ax.axis('tight')
+
         # statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_method)
         # after
         over_time = datetime.now()
-        process_time = ((over_time - before_time).microseconds) *1.0/(10**6)
+        process_time = (over_time - before_time).microseconds * 1.0 / (10**6)
         # print(process_time)
         time_info[sample_method] = "%.3f" % process_time
         # create model
@@ -90,6 +106,8 @@ def process(object):
                      label='%s (AUC = %0.2f)' % (sample_method,roc_auc))
         metrics_dict[sample_method] = {"precision": precision, "recall": recall, "f1": f1,
                                        "gmean": gmean, "auc_roc": auc_roc, "auc_pr": auc_pr}
+    if SHOW_TSNE:
+        plt.show()
     df = pd.DataFrame(metrics_dict)
     # df.set_index(['precision', 'recall', 'gmean', 'f1'], inplace=True)
     df = df.T
@@ -199,8 +217,9 @@ if __name__ == '__main__':
     # names = ['ecoli', 'optical_digits']
     # test dataset
     # datasets = ['webpage']
+    datasets = ["coil_2000"]
     # sparsity ratio >= 0.5
-    datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
+    # datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
 
     # sparsity ratio < 0.5
     # datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',

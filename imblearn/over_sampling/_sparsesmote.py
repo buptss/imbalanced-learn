@@ -26,7 +26,7 @@ from ..utils._docstring import _random_state_docstring
 
 # FIXME: remove in 0.6
 SMOTE_KIND = ('regular', 'borderline1', 'borderline2', 'svm')
-SparseRatioThreshold = 0.9
+SparseRatioThreshold = 0.45
 import math
 TEST = True
 # SparseRatioThreshold = 0.5 :0.795
@@ -61,11 +61,13 @@ class SparseBaseSMOTE(BaseOverSampler):
         num = len(X[row][(X[row] == 0.0)])
         InstanceSparseRatio = num * 1.0 / len(X[row])
         # Sparseness of the nearest neighbor samples
-        neighbor = nn_data[nn_num[row, col]]
-        zero_num = len(neighbor[(neighbor == 0.0)])
-        neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
+        # neighbor = nn_data[nn_num[row, col]]
+        # zero_num = len(neighbor[(neighbor == 0.0)])
+        # neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
 
-        if InstanceSparseRatio + neighborSparsityRatio > SparseRatioThreshold:
+        if InstanceSparseRatio > SparseRatioThreshold:
+        # if InstanceSparseRatio > SparseRatioThreshold or neighborSparsityRatio > SparseRatioThreshold:
+        # if InstanceSparseRatio + neighborSparsityRatio > SparseRatioThreshold:
             # if InstanceSparseRatio < dataset_sparse_ratio:
             sample = X[row]
         # for loc in range(len(X_new[i])):
@@ -163,10 +165,6 @@ class SparseBaseSMOTE(BaseOverSampler):
                 sample_dataset_ratio = (1 - InstanceSparseRatio) / dataset_sparse_ratio * n_samples
                 sum_info += 1 - InstanceSparseRatio
                 num_sample += 1
-                # print("n_samples:", n_samples)
-                # print(sample_dataset_ratio)
-                # if sample_dataset_ratio < 0.5:
-                #     continue
                 for j in range(0, int(math.floor(sample_dataset_ratio)), 1):
                     X_new.append(sample)
                     num_instances += 1
