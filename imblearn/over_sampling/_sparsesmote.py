@@ -54,9 +54,8 @@ class SparseBaseSMOTE(BaseOverSampler):
             'k_neighbors', self.k_neighbors, additional_neighbor=1)
         self.nn_k_.set_params(**{'n_jobs': self.n_jobs})
 
-    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col):
-        sample = X[row] - step * (
-                X[row] - nn_data[nn_num[row, col]])
+
+    def _calc_instance_sparseratio(self, X, row):
         # Sparseness of raw data sample
         num = len(X[row][(X[row] == 0.0)])
         InstanceSparseRatio = num * 1.0 / len(X[row])
@@ -64,16 +63,21 @@ class SparseBaseSMOTE(BaseOverSampler):
         # neighbor = nn_data[nn_num[row, col]]
         # zero_num = len(neighbor[(neighbor == 0.0)])
         # neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
+        return InstanceSparseRatio
 
+    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col, InstanceSparseRatio):
         if InstanceSparseRatio > SparseRatioThreshold:
+            new_sample = X[row]
+        else:
+            new_sample = X[row] - step * (
+                    X[row] - nn_data[nn_num[row, col]])
         # if InstanceSparseRatio > SparseRatioThreshold or neighborSparsityRatio > SparseRatioThreshold:
         # if InstanceSparseRatio + neighborSparsityRatio > SparseRatioThreshold:
             # if InstanceSparseRatio < dataset_sparse_ratio:
-            sample = X[row]
         # for loc in range(len(X_new[i])):
         #     if X[row][loc] == 0.0:
         #         X_new[i] = X[row][loc]
-        return sample, InstanceSparseRatio
+        return new_sample
 
     def _make_samples(self,
                       X,
@@ -83,7 +87,7 @@ class SparseBaseSMOTE(BaseOverSampler):
                       nn_num,
                       n_samples,
                       step_size=1.,
-                      dataset_sparse_ratio=0.):
+                      sum_instance_sparse_ratio=0.):
         """A support function that returns artificial samples constructed along
         the line connecting nearest neighbours.
 
@@ -138,32 +142,24 @@ class SparseBaseSMOTE(BaseOverSampler):
             row_indices, col_indices, samples = [], [], []
             for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
                 if X[row].nnz:
-                    sample, InstanceSparseRatio = self._deal_with_instance(X, row, step, nn_data, nn_num, col)
-                    # original result: 0.805
-                    # sample_dataset_ratio = (1 - InstanceSparseRatio)/(1 - dataset_sparse_ratio)
-                    # like adasyn result:
-                    sample_dataset_ratio = (1 - InstanceSparseRatio)/dataset_sparse_ratio * n_samples
-                    for j in range(0, int(math.floor(sample_dataset_ratio)), 1):
-                    # if sample_dataset_ratio > 2:
-                        row_indices += [i] * len(sample.indices)
-                        col_indices += sample.indices.tolist()
-                        samples += sample.data.tolist()
+                    InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
+                    sample_times = (1 - InstanceSparseRatio)/sum_instance_sparse_ratio * n_samples
+                    for j in range(0, int(math.floor(sample_times)), 1):
+                        new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
+                        row_indices += [i] * len(new_sample.indices)
+                        col_indices += new_sample.indices.tolist()
+                        samples += new_sample.data.tolist()
                         num_instances += 1
         else:
             X_new = []
-            sum_info = 0
-            num_sample = 0
             for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
-                sample, InstanceSparseRatio = self._deal_with_instance(X, row, step, nn_data, nn_num, col)
-                # original result: 0.805
-                # sample_dataset_ratio = (1 - InstanceSparseRatio)/(1 - dataset_sparse_ratio)
-                # like adasyn result:
-                sample_dataset_ratio = (1 - InstanceSparseRatio) / dataset_sparse_ratio * n_samples
-                sum_info += 1 - InstanceSparseRatio
-                num_sample += 1
-                for j in range(0, int(math.floor(sample_dataset_ratio)), 1):
-                    X_new.append(sample)
+                InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
+                sample_times = (1 - InstanceSparseRatio) / sum_instance_sparse_ratio * n_samples
+                for j in range(0, int(math.floor(sample_times)), 1):
+                    new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
+                    X_new.append(new_sample)
                     num_instances += 1
+
 
         y_new = np.array([y_type] * num_instances, dtype=y_dtype)
         # print("num_instances, n_samples")
@@ -815,13 +811,13 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
             exist = (X_class > 0) * 1.0
             factor = np.ones(X_class.shape[1])
             res = np.dot(exist, factor)
-            dataset_sparse_ratio = np.sum(res/len(X_class[0]))
+            sum_instance_sparse_ratio = np.sum(res/len(X_class[0]))
 
             self.nn_k_.fit(X_class)
             # get all the 5 neighbor minority of specific instance
             nns = self.nn_k_.kneighbors(X_class, return_distance=False)[:, 1:]
             X_new, y_new = self._make_samples(X_class, y.dtype, class_sample,
-                                              X_class, nns, n_samples, 1.0, dataset_sparse_ratio)
+                                              X_class, nns, n_samples, 1.0, sum_instance_sparse_ratio)
 
             if sparse.issparse(X_new):
                 X_resampled = sparse.vstack([X_resampled, X_new])

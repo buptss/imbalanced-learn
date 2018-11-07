@@ -29,7 +29,7 @@ SHOW_FEATURE = False
 SHOW_METRICS = True
 SHOW_DURATION_TIME = False
 SHOW_AUC_ROC_PLOT = False
-SHOW_TSNE = False
+SHOW_TSNE = True
 
 
 def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_method):
@@ -108,6 +108,7 @@ def process(object):
                                        "gmean": gmean, "auc_roc": auc_roc, "auc_pr": auc_pr}
     if SHOW_TSNE:
         plt.show()
+        plt.savefig("tsne.pdf")
     df = pd.DataFrame(metrics_dict)
     # df.set_index(['precision', 'recall', 'gmean', 'f1'], inplace=True)
     df = df.T
