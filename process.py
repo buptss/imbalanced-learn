@@ -29,7 +29,28 @@ SHOW_FEATURE = False
 SHOW_METRICS = True
 SHOW_DURATION_TIME = False
 SHOW_AUC_ROC_PLOT = False
-SHOW_TSNE = True
+SHOW_TSNE = False
+sample_methods = ['Sparse SMOTE', 'random', 'No Sample']
+# init sample method
+# sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
+#                   'SVMSMOTE', 'ADASYN', 'No Sample']
+# test dataset
+# datasets = ['webpage']
+# datasets = ['car_eval_4']
+# datasets = ["coil_2000"]
+# sparsity ratio >= 0.5
+datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
+
+# sparsity ratio < 0.5
+# datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
+#             'isolet', 'us_crime', 'yeast_ml8', 'scene', 'libras_move', 'thyroid_sick',
+#             'oil', 'wine_quality', 'letter_img', 'yeast_me2',
+#             'ozone_level', 'mammography', 'protein_homo', 'abalone_19']
+# all
+# datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
+#          'car_eval_34', 'isolet', 'us_crime', 'yeast_ml8', 'scene', 'libras_move', 'thyroid_sick', 'coil_2000',
+#          'arrhythmia', 'solar_flare_m0', 'oil', 'car_eval_4', 'wine_quality', 'letter_img', 'yeast_me2',
+#          'webpage', 'ozone_level', 'mammography', 'protein_homo', 'abalone_19']
 
 
 def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_method):
@@ -52,14 +73,8 @@ def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_met
 
 
 # handle each data set
-def process(object):
+def process(object, sample_methods):
     train_X, train_y, test_X, test_y = object['train_X'], object['train_y'], object['test_X'], object['test_y']
-    # init sample method
-    # sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
-    #                   'SVMSMOTE', 'ADASYN', 'No Sample']
-    sample_methods = ['Sparse SMOTE', 'random', 'No Sample']
-    # sample_methods = ['Sparse SMOTE']
-    # sample_methods = ['random', 'smote', 'adasyn', 'mwmote']
     metrics_dict = {}
     time_info = {}
 
@@ -71,8 +86,9 @@ def process(object):
     for sample_method in sample_methods:
         # before
         before_time = datetime.now()
-        ax = subplots[num_plot]
-        num_plot += 1
+        if SHOW_TSNE:
+            ax = subplots[num_plot]
+            num_plot += 1
         # over sample
         X_resampled, y_resampled = oversample(train_X, train_y, method=sample_method)
 
@@ -216,23 +232,6 @@ if __name__ == '__main__':
     # filename = "abalone.data"
     # names = ['optical_digits']
     # names = ['ecoli', 'optical_digits']
-    # test dataset
-    # datasets = ['webpage']
-    datasets = ["coil_2000"]
-    # sparsity ratio >= 0.5
-    # datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
-
-    # sparsity ratio < 0.5
-    # datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
-    #             'isolet', 'us_crime', 'yeast_ml8', 'scene', 'libras_move', 'thyroid_sick',
-    #             'oil', 'wine_quality', 'letter_img', 'yeast_me2',
-    #             'ozone_level', 'mammography', 'protein_homo', 'abalone_19']
-
-    # all
-    # datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
-    #          'car_eval_34', 'isolet', 'us_crime', 'yeast_ml8', 'scene', 'libras_move', 'thyroid_sick', 'coil_2000',
-    #          'arrhythmia', 'solar_flare_m0', 'oil', 'car_eval_4', 'wine_quality', 'letter_img', 'yeast_me2',
-    #          'webpage', 'ozone_level', 'mammography', 'protein_homo', 'abalone_19']
     time_dict = {}
     for dataset in datasets:
         if SHOW_AUC_ROC_PLOT:
@@ -241,7 +240,7 @@ if __name__ == '__main__':
             print(r"\multirow{6}{*}{\textbf{"+dataset+"}}")
         # object = fetch_datasets(data_home='./data/')[dataset]
         object = np.load('./data/zendo_stable/'+dataset+'.npz')
-        time_info = process(object)
+        time_info = process(object, sample_methods)
         time_dict[dataset] = time_info
         if SHOW_METRICS:
             print("\hline")
@@ -263,8 +262,5 @@ if __name__ == '__main__':
             print "&" + row["SVMSMOTE"],
             print "&" + row["ADASYN"] + r"\\"
             print("\hline")
-
-    # handle_abalone(column_names, filename)
-    # handle_abalone(column_names, filename)
 
 
