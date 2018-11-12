@@ -1,4 +1,4 @@
-﻿"""Class to perform over-sampling using SMOTE."""
+"""Class to perform over-sampling using SMOTE."""
 
 # Authors: Guillaume Lemaitre <g.lemaitre58@gmail.com>
 #          Fernando Nogueira
@@ -65,12 +65,18 @@ class SparseBaseSMOTE(BaseOverSampler):
         # neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
         return InstanceSparseRatio
 
-    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col, InstanceSparseRatio):
+    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col, InstanceSparseRatio,need_insert_array):
+        new_sample = np.zeros((len(X[row]),))
         if InstanceSparseRatio > SparseRatioThreshold:
             new_sample = X[row]
         else:
-            new_sample = X[row] - step * (
-                    X[row] - nn_data[nn_num[row, col]])
+           # print(need_insert_array)
+            for i in range(len(X[row])):
+                if i in need_insert_array:
+                    new_sample[i] = X[row][i] - step * (
+                            X[row][i] - nn_data[nn_num[row, col]][i])
+                else:
+                    new_sample[i] = X[row][i]
         # if InstanceSparseRatio > SparseRatioThreshold or neighborSparsityRatio > SparseRatioThreshold:
         # if InstanceSparseRatio + neighborSparsityRatio > SparseRatioThreshold:
             # if InstanceSparseRatio < dataset_sparse_ratio:
@@ -86,8 +92,10 @@ class SparseBaseSMOTE(BaseOverSampler):
                       nn_data,
                       nn_num,
                       n_samples,
+                      need_insert_array,
                       step_size=1.,
-                      sum_instance_sparse_ratio=0.):
+                      sum_instance_sparse_ratio=0.
+                      ):
         """A support function that returns artificial samples constructed along
         the line connecting nearest neighbours.
 
@@ -156,7 +164,7 @@ class SparseBaseSMOTE(BaseOverSampler):
                 InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
                 sample_times = (1 - InstanceSparseRatio) / sum_instance_sparse_ratio * n_samples
                 for j in range(0, int(math.floor(sample_times)), 1):
-                    new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
+                    new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio,need_insert_array)
                     X_new.append(new_sample)
                     num_instances += 1
 
@@ -784,11 +792,11 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
                 self.nn_m_.set_params(**{'n_jobs': self.n_jobs})
 
     # FIXME: to be removed in 0.6
-    def _fit_resample(self, X, y):
+    def _fit_resample(self, X, y, need_insert_array):
         self._validate_estimator()
-        return self._sample(X, y)
+        return self._sample(X, y, need_insert_array)
 
-    def _sample(self, X, y):
+    def _sample(self, X, y, need_insert_array):
         # FIXME: uncomment in version 0.6
         # self._validate_estimator()
 
@@ -817,7 +825,7 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
             # get all the 5 neighbor minority of specific instance
             nns = self.nn_k_.kneighbors(X_class, return_distance=False)[:, 1:]
             X_new, y_new = self._make_samples(X_class, y.dtype, class_sample,
-                                              X_class, nns, n_samples, 1.0, sum_instance_sparse_ratio)
+                                              X_class, nns, n_samples, need_insert_array,1.0, sum_instance_sparse_ratio)
 
             if sparse.issparse(X_new):
                 X_resampled = sparse.vstack([X_resampled, X_new])
@@ -826,3 +834,4 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
             y_resampled = np.hstack((y_resampled, y_new))
 
         return X_resampled, y_resampled
+
