@@ -75,8 +75,7 @@ class SparseBaseSMOTE(BaseOverSampler):
         # neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
         return InstanceSparseRatio
 
-
-    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col, InstanceSparseRatio,need_insert_array):
+    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col, InstanceSparseRatio, need_insert_array):
         new_sample = np.zeros((len(X[row]),))
         if InstanceSparseRatio > SparseRatioThreshold:
             new_sample = X[row]
