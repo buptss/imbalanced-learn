@@ -16,7 +16,10 @@ import MWMOTE
 from datetime import datetime
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
+import sklearn
 
+
+warnings.filterwarnings(action='ignore', category=sklearn.exceptions.UndefinedMetricWarning)
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings(action='ignore', category=DeprecationWarning)
 # from analysis import analyze_data_proportion, export_pr_auc
@@ -30,16 +33,18 @@ SHOW_METRICS = True
 SHOW_DURATION_TIME = False
 SHOW_AUC_ROC_PLOT = False
 SHOW_TSNE = False
-sample_methods = ['Sparse SMOTE', 'random', 'No Sample']
+# sample_methods = ['Sparse SMOTE']
+# sample_methods = ['Sparse SMOTE', 'random', 'No Sample']
 # init sample method
-# sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
-#                   'SVMSMOTE', 'ADASYN', 'No Sample']
+sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
+                  'SVMSMOTE', 'ADASYN', 'No Sample']
 # test dataset
 # datasets = ['webpage']
 # datasets = ['car_eval_4']
-# datasets = ["coil_2000"]
+datasets = ["coil_2000"]
 # sparsity ratio >= 0.5
-datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
+# datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
+datasets = ["car_eval_34", "coil_2000", 'solar_flare_m0','car_eval_4']
 
 # sparsity ratio < 0.5
 # datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
@@ -113,13 +118,14 @@ def process(object, sample_methods):
         gbm = xgb(max_depth=3, n_estimators=300, learning_rate=0.01)
         # gbm = xgb(max_depth=3, n_estimators=300, learning_rate=0.01, max_delta_step=0.1)
         # train model
-        gbm.fit(X_resampled, y_resampled, eval_metric='auc')
+        gbm.fit(X_resampled, y_resampled, eval_set=[(X_resampled, y_resampled)],
+                eval_metric='auc', verbose=False)
         # evaluate on test set
         precision, recall, f1, gmean, auc_roc, auc_pr, fpr, tpr = evaluate(test_X, test_y, gbm)
         roc_auc = auc(fpr, tpr)
         if SHOW_AUC_ROC_PLOT:
             plt.plot(fpr, tpr, lw=1, alpha=0.3,
-                     label='%s (AUC = %0.2f)' % (sample_method,roc_auc))
+                     label='%s (AUC = %0.2f)' % (sample_method, roc_auc))
         metrics_dict[sample_method] = {"precision": precision, "recall": recall, "f1": f1,
                                        "gmean": gmean, "auc_roc": auc_roc, "auc_pr": auc_pr}
     if SHOW_TSNE:
@@ -223,6 +229,13 @@ def calc_sparsity_ratio(X):
     print(X.size)
     sparsity_ratio = "%.4f" % (np.sum(X == 0)*1.0/X.size)
     return sparsity_ratio
+
+# def deal_with_slash(name):
+#     char_list = name.split("_")
+#     ret = char_list[0]
+#     for i in range(1, len(char_list), 1):
+#         ret = ret + "\_" + char_list[i]
+#     return ret
 
 
 # 功能：主程序
