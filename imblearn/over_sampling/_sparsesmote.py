@@ -9,8 +9,8 @@ from __future__ import division
 
 import types
 import warnings
-
-import numpy as np
+from math import log
+from math import e
 
 from scipy import sparse
 
@@ -36,8 +36,7 @@ import pandas as pd
 
 
 def detect_one_hot(train_X):
-    # object = np.load('/home/luban/imbalanced_learn/data/zendo_stable/webpage.npz')
-    # s = object['train_X']
+    # output all one-hot columns
     df = pd.DataFrame(data=train_X)
     l = []
     for i in df.columns:
@@ -77,7 +76,6 @@ class SparseBaseSMOTE(BaseOverSampler):
             'k_neighbors', self.k_neighbors, additional_neighbor=1)
         self.nn_k_.set_params(**{'n_jobs': self.n_jobs})
 
-
     def _calc_instance_sparseratio(self, X, row):
         # Sparseness of raw data sample
         num = len(X[row][(X[row] == 0.0)])
@@ -93,9 +91,17 @@ class SparseBaseSMOTE(BaseOverSampler):
         choices = [True, False]
         instance_choice = random_pick(choices, [InstanceSparseRatio, 1 - InstanceSparseRatio])
         if instance_choice:
+            # duplicate
             new_sample = X[row]
         else:
+            # generate synthetic instances
             new_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col]])
+            # for i in range(len(X[row])):
+            #     if i in no_need_insert_array:
+            #         new_sample[i] = X[row][i] - step * (
+            #                 X[row][i] - nn_data[nn_num[row, col]][i])
+            #     else:
+            #         new_sample[i] = X[row][i]
         # if InstanceSparseRatio > SparseRatioThreshold:
         #     new_sample = X[row]
         # else:
@@ -151,6 +157,8 @@ class SparseBaseSMOTE(BaseOverSampler):
         n_samples : int
             The number of samples to generate.
 
+        need_insert_array:
+
         step_size : float, optional (default=1.)
             The step size to create samples.
 
@@ -181,7 +189,8 @@ class SparseBaseSMOTE(BaseOverSampler):
             for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
                 if X[row].nnz:
                     InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
-                    sample_times = (1 - InstanceSparseRatio)/sum_instance_sparse_ratio * n_samples
+                    sample_times = log(1 + (1 - InstanceSparseRatio)) / sum_instance_sparse_ratio * n_samples
+                    # sample_times = log(1 - InstanceSparseRatio)/log(sum_instance_sparse_ratio) * n_samples
                     # new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
                     for j in range(0, int(math.floor(sample_times)), 1):
                         new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
@@ -190,9 +199,16 @@ class SparseBaseSMOTE(BaseOverSampler):
                         samples += new_sample.data.tolist()
                         num_instances += 1
         else:
+            # X_new = np.zeros((n_samples, X.shape[1]), dtype=X.dtype)
+            # for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
+            #     X_new[i] = self._generate_sample(X, nn_data, nn_num,
+            #                                      row, col, step)
+            # return X_new, y_new
             X_new = []
             for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
                 InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
+                # sample_times = log(1 + (1 - InstanceSparseRatio)) / sum_instance_sparse_ratio * n_samples
+                # calculate sample times
                 sample_times = (1 - InstanceSparseRatio) / sum_instance_sparse_ratio * n_samples
                 # new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio,
                 #                                       need_insert_array)
@@ -851,14 +867,20 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
             X_class = safe_indexing(X, target_class_indices)
 
             # like adasyn result:
-            exist = (X_class > 0) * 1.0
+            exist = (X_class != 0) * 1.0
             factor = np.ones(X_class.shape[1])
             res = np.dot(exist, factor)
-            sum_instance_sparse_ratio = np.sum(res/len(X_class[0]))
+            # logsum = 0
+            num = len(X_class[0])
+            # for i in range(len(res)):
+            #     logsum += log(res[i]/num + 1)
+            sum_instance_sparse_ratio = np.sum(res/num)
 
             self.nn_k_.fit(X_class)
             # get all the 5 neighbor minority of specific instance
             nns = self.nn_k_.kneighbors(X_class, return_distance=False)[:, 1:]
+            # X_new, y_new = self._make_samples(X_class, y.dtype, class_sample,
+            #                                   X_class, nns, n_samples, no_need_insert_array, 1.0, logsum)
             X_new, y_new = self._make_samples(X_class, y.dtype, class_sample,
                                               X_class, nns, n_samples, no_need_insert_array, 1.0, sum_instance_sparse_ratio)
 
