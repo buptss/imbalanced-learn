@@ -1,57 +1,39 @@
-"""Class to perform over-sampling using SMOTE."""
+﻿"""Class to perform over-sampling using SMOTE."""
 
 # Authors: Guillaume Lemaitre <g.lemaitre58@gmail.com>
 #          Fernando Nogueira
 #          Christos Aridas
+#          Dzianis Dudnik
 # License: MIT
 
 from __future__ import division
 
 import types
 import warnings
-from math import log
-from math import e
+from collections import Counter
 
+import numpy as np
 from scipy import sparse
 
 from sklearn.base import clone
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.svm import SVC
-from sklearn.utils import check_random_state, safe_indexing
+from sklearn.utils import check_random_state
+from sklearn.utils import safe_indexing
+from sklearn.utils import check_array
+from sklearn.utils import check_X_y
+from sklearn.utils.sparsefuncs_fast import csr_mean_variance_axis0
+from sklearn.utils.sparsefuncs_fast import csc_mean_variance_axis0
 
 from .base import BaseOverSampler
 from ..exceptions import raise_isinstance_error
 from ..utils import check_neighbors_object
+from ..utils import check_target_type
 from ..utils import Substitution
 from ..utils._docstring import _random_state_docstring
 
 # FIXME: remove in 0.6
 SMOTE_KIND = ('regular', 'borderline1', 'borderline2', 'svm')
-SparseRatioThreshold = 0.45
-import math
-TEST = True
-# SparseRatioThreshold = 0.5 :0.795
-import random
-import numpy as np
-import pandas as pd
-
-
-def detect_one_hot(train_X):
-    # output all one-hot columns
-    df = pd.DataFrame(data=train_X)
-    l = []
-    for i in df.columns:
-        if len(df[i].unique()) == 2 and 0.0 in df[i].unique() and 1.0 in df[i].unique():
-            l.append(i)
-    return l
-
-
-def random_pick(some_list, probabilities):
-      x = random.uniform(0, 1)
-      cumulative_probability = 0.0
-      for item, item_probability in zip(some_list, probabilities):
-            cumulative_probability += item_probability
-            if x < cumulative_probability: break
-      return item
 
 
 class SparseBaseSMOTE(BaseOverSampler):
@@ -76,51 +58,6 @@ class SparseBaseSMOTE(BaseOverSampler):
             'k_neighbors', self.k_neighbors, additional_neighbor=1)
         self.nn_k_.set_params(**{'n_jobs': self.n_jobs})
 
-    def _calc_instance_sparseratio(self, X, row):
-        # Sparseness of raw data sample
-        num = len(X[row][(X[row] == 0.0)])
-        InstanceSparseRatio = num * 1.0 / len(X[row])
-        # Sparseness of the nearest neighbor samples
-        # neighbor = nn_data[nn_num[row, col]]
-        # zero_num = len(neighbor[(neighbor == 0.0)])
-        # neighborSparsityRatio = zero_num * 1.0 / len(neighbor)
-        return InstanceSparseRatio
-
-    def _deal_with_instance(self, X, row, step, nn_data, nn_num, col, InstanceSparseRatio, no_need_insert_array):
-        # new_sample = np.zeros((len(X[row]),))
-        choices = [True, False]
-        instance_choice = random_pick(choices, [InstanceSparseRatio, 1 - InstanceSparseRatio])
-        if instance_choice:
-            # duplicate
-            new_sample = X[row]
-        else:
-            # generate synthetic instances
-            new_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col]])
-            # for i in range(len(X[row])):
-            #     if i in no_need_insert_array:
-            #         new_sample[i] = X[row][i] - step * (
-            #                 X[row][i] - nn_data[nn_num[row, col]][i])
-            #     else:
-            #         new_sample[i] = X[row][i]
-        # if InstanceSparseRatio > SparseRatioThreshold:
-        #     new_sample = X[row]
-        # else:
-        #     # print(need_insert_array)
-        #     new_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col]])
-            # for i in range(len(X[row])):
-            #     if i in no_need_insert_array:
-            #         new_sample[i] = X[row][i] - step * (
-            #                 X[row][i] - nn_data[nn_num[row, col]][i])
-            #     else:
-            #         new_sample[i] = X[row][i]
-        # if InstanceSparseRatio > SparseRatioThreshold or neighborSparsityRatio > SparseRatioThreshold:
-        # if InstanceSparseRatio + neighborSparsityRatio > SparseRatioThreshold:
-            # if InstanceSparseRatio < dataset_sparse_ratio:
-        # for loc in range(len(X_new[i])):
-        #     if X[row][loc] == 0.0:
-        #         X_new[i] = X[row][loc]
-        return new_sample
-
     def _make_samples(self,
                       X,
                       y_dtype,
@@ -128,10 +65,7 @@ class SparseBaseSMOTE(BaseOverSampler):
                       nn_data,
                       nn_num,
                       n_samples,
-                      need_insert_array,
-                      step_size=1.,
-                      sum_instance_sparse_ratio=0.
-                      ):
+                      step_size=1.):
         """A support function that returns artificial samples constructed along
         the line connecting nearest neighbours.
 
@@ -152,12 +86,10 @@ class SparseBaseSMOTE(BaseOverSampler):
             Data set carrying all the neighbours to be used
 
         nn_num : ndarray, shape (n_samples_all, k_nearest_neighbours)
-            The nearest neighbours of each sample in nn_data.
+            The nearest neighbours of each sample in `nn_data`.
 
         n_samples : int
             The number of samples to generate.
-
-        need_insert_array:
 
         step_size : float, optional (default=1.)
             The step size to create samples.
@@ -172,63 +104,93 @@ class SparseBaseSMOTE(BaseOverSampler):
 
         """
         random_state = check_random_state(self.random_state)
+        samples_indices = random_state.randint(
+            low=0, high=len(nn_num.flatten()), size=n_samples)
+        steps = step_size * random_state.uniform(size=n_samples)
+        rows = np.floor_divide(samples_indices, nn_num.shape[1])
+        cols = np.mod(samples_indices, nn_num.shape[1])
 
-        # Select size neighbors from all minority neighbors
-        size = len(X)
-        # samples_indices = random_state.randint(
-        #     low=0, high=len(nn_num.flatten()), size=size)
-        steps = step_size * random_state.uniform(size=size)
-        # rows = np.floor_divide(samples_indices, nn_num.shape[1])
-        # cols = np.mod(samples_indices, nn_num.shape[1])
-        rows = np.arange(0, len(X), 1)
-        cols = np.random.randint(0, 5, size=size)
+        y_new = np.array([y_type] * len(samples_indices), dtype=y_dtype)
 
-        num_instances = 0
         if sparse.issparse(X):
             row_indices, col_indices, samples = [], [], []
             for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
                 if X[row].nnz:
-                    InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
-                    sample_times = log(1 + (1 - InstanceSparseRatio)) / sum_instance_sparse_ratio * n_samples
-                    # sample_times = log(1 - InstanceSparseRatio)/log(sum_instance_sparse_ratio) * n_samples
-                    # new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
-                    for j in range(0, int(math.floor(sample_times)), 1):
-                        new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio)
-                        row_indices += [i] * len(new_sample.indices)
-                        col_indices += new_sample.indices.tolist()
-                        samples += new_sample.data.tolist()
-                        num_instances += 1
-        else:
-            # X_new = np.zeros((n_samples, X.shape[1]), dtype=X.dtype)
-            # for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
-            #     X_new[i] = self._generate_sample(X, nn_data, nn_num,
-            #                                      row, col, step)
-            # return X_new, y_new
-            X_new = []
-            for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
-                InstanceSparseRatio = self._calc_instance_sparseratio(X, row)
-                # sample_times = log(1 + (1 - InstanceSparseRatio)) / sum_instance_sparse_ratio * n_samples
-                # calculate sample times
-                sample_times = (1 - InstanceSparseRatio) / sum_instance_sparse_ratio * n_samples
-                # new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio,
-                #                                       need_insert_array)
-                for j in range(0, int(math.floor(sample_times)), 1):
-                    new_sample = self._deal_with_instance(X, row, step, nn_data, nn_num, col, InstanceSparseRatio, need_insert_array)
-                    X_new.append(new_sample)
-                    num_instances += 1
-
-
-        y_new = np.array([y_type] * num_instances, dtype=y_dtype)
-        # print("num_instances, n_samples")
-        # print(num_instances, n_samples)
-        # print("sum_info", sum_info, "num_sample:", num_sample)
-        if sparse.issparse(X):
+                    sample = self._generate_sample(X, nn_data, nn_num,
+                                                   row, col, step)
+                    row_indices += [i] * len(sample.indices)
+                    col_indices += sample.indices.tolist()
+                    samples += sample.data.tolist()
             return (sparse.csr_matrix((samples, (row_indices, col_indices)),
-                                      [num_instances, X.shape[1]],
+                                      [len(samples_indices), X.shape[1]],
                                       dtype=X.dtype),
                     y_new)
         else:
+            X_new = np.zeros((n_samples, X.shape[1]), dtype=X.dtype)
+            for i, (row, col, step) in enumerate(zip(rows, cols, steps)):
+                X_new[i] = self._generate_sample(X, nn_data, nn_num,
+                                                 row, col, step)
             return X_new, y_new
+
+    def _generate_sample(self, X, nn_data, nn_num, row, col, step):
+        r"""Generate a synthetic sample.
+
+        The rule for the generation is:
+
+        .. math::
+           \mathbf{s_{s}} = \mathbf{s_{i}} + \mathcal{u}(0, 1) \times
+           (\mathbf{s_{i}} - \mathbf{s_{nn}}) \,
+
+        where \mathbf{s_{s}} is the new synthetic samples, \mathbf{s_{i}} is
+        the current sample, \mathbf{s_{nn}} is a randomly selected neighbors of
+        \mathbf{s_{i}} and \mathcal{u}(0, 1) is a random number between [0, 1).
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix}, shape (n_samples, n_features)
+            Points from which the points will be created.
+
+        nn_data : ndarray, shape (n_samples_all, n_features)
+            Data set carrying all the neighbours to be used.
+
+        nn_num : ndarray, shape (n_samples_all, k_nearest_neighbours)
+            The nearest neighbours of each sample in `nn_data`.
+
+        row : int
+            Index pointing at feature vector in X which will be used
+            as a base for creating new sample.
+
+        col : int
+            Index pointing at which nearest neighbor of base feature vector
+            will be used when creating new sample.
+
+        step : float
+            Step size for new sample.
+
+        Returns
+        -------
+        X_new : {ndarray, sparse matrix}, shape (n_features,)
+            Single synthetically generated sample.
+
+        """
+        col_other = np.random.randint(0, nn_num.shape[1])
+        # choice = np.random.random()
+        # smote
+        new_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col]])
+
+        # new_sample = nn_data[nn_num[row, col]] - step * (nn_data[nn_num[row, col]] - nn_data[nn_num[row, col_other]])
+
+        # method: choose a node in the triangle area of point and its two neighbors
+        # A_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col]])
+        # B_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col_other]])
+        # new_sample = (A_sample+B_sample)/2
+
+        # method: choose one between two neighbors
+        # if choice < 0.5:
+        #     new_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col]])
+        # else:
+        #     new_sample = X[row] - step * (X[row] - nn_data[nn_num[row, col_other]])
+        return new_sample
 
     def _in_danger_noise(self, nn_estimator, samples, target_class, y,
                          kind='danger'):
@@ -282,7 +244,7 @@ class SparseBaseSMOTE(BaseOverSampler):
 @Substitution(
     sampling_strategy=BaseOverSampler._sampling_strategy_docstring,
     random_state=_random_state_docstring)
-class SparseBorderlineSMOTE(SparseBaseSMOTE):
+class BorderlineSMOTE(SparseBaseSMOTE):
     """Over-sampling using Borderline SMOTE.
 
     This algorithm is a variant of the original SMOTE algorithm proposed in
@@ -327,6 +289,8 @@ class SparseBorderlineSMOTE(SparseBaseSMOTE):
     --------
     SMOTE : Over-sample using SMOTE.
 
+    SMOTENC : Over-sample using SMOTE for continuous and categorical features.
+
     SVMSMOTE : Over-sample using SVM-SMOTE variant.
 
     ADASYN : Over-sample using ADASYN.
@@ -347,13 +311,13 @@ class SparseBorderlineSMOTE(SparseBaseSMOTE):
     >>> from collections import Counter
     >>> from sklearn.datasets import make_classification
     >>> from imblearn.over_sampling import \
-SparseBorderlineSMOTE # doctest: +NORMALIZE_WHITESPACE
+BorderlineSMOTE # doctest: +NORMALIZE_WHITESPACE
     >>> X, y = make_classification(n_classes=2, class_sep=2,
     ... weights=[0.1, 0.9], n_informative=3, n_redundant=1, flip_y=0,
     ... n_features=20, n_clusters_per_class=1, n_samples=1000, random_state=10)
     >>> print('Original dataset shape %s' % Counter(y))
     Original dataset shape Counter({{1: 900, 0: 100}})
-    >>> sm = SparseBorderlineSMOTE(random_state=42)
+    >>> sm = BorderlineSMOTE(random_state=42)
     >>> X_res, y_res = sm.fit_resample(X, y)
     >>> print('Resampled dataset shape %s' % Counter(y_res))
     Resampled dataset shape Counter({{0: 900, 1: 900}})
@@ -367,14 +331,14 @@ SparseBorderlineSMOTE # doctest: +NORMALIZE_WHITESPACE
                  n_jobs=1,
                  m_neighbors=10,
                  kind='borderline-1'):
-        super(SparseBorderlineSMOTE, self).__init__(
+        super(BorderlineSMOTE, self).__init__(
             sampling_strategy=sampling_strategy, random_state=random_state,
             k_neighbors=k_neighbors, n_jobs=n_jobs, ratio=None)
         self.m_neighbors = m_neighbors
         self.kind = kind
 
     def _validate_estimator(self):
-        super(SparseBorderlineSMOTE, self)._validate_estimator()
+        super(BorderlineSMOTE, self)._validate_estimator()
         self.nn_m_ = check_neighbors_object(
             'k_neighbors', self.k_neighbors, additional_neighbor=1)
         self.nn_m_.set_params(**{'n_jobs': self.n_jobs})
@@ -406,9 +370,8 @@ SparseBorderlineSMOTE # doctest: +NORMALIZE_WHITESPACE
                 continue
 
             self.nn_k_.fit(X_class)
-            nns = self.nn_k_.kneighbors(
-                safe_indexing(X_class, danger_index),
-                return_distance=False)[:, 1:]
+            nns = self.nn_k_.kneighbors(safe_indexing(X_class, danger_index),
+                                        return_distance=False)[:, 1:]
 
             # divergence between borderline-1 and borderline-2
             if self.kind == 'borderline-1':
@@ -461,7 +424,7 @@ SparseBorderlineSMOTE # doctest: +NORMALIZE_WHITESPACE
 @Substitution(
     sampling_strategy=BaseOverSampler._sampling_strategy_docstring,
     random_state=_random_state_docstring)
-class SparseSVMSMOTE(SparseBaseSMOTE):
+class SVMSMOTE(SparseBaseSMOTE):
     """Over-sampling using SVM-SMOTE.
 
     Variant of SMOTE algorithm which use an SVM algorithm to detect sample to
@@ -507,6 +470,8 @@ class SparseSVMSMOTE(SparseBaseSMOTE):
     --------
     SMOTE : Over-sample using SMOTE.
 
+    SMOTENC : Over-sample using SMOTE for continuous and categorical features.
+
     BorderlineSMOTE : Over-sample using Borderline-SMOTE.
 
     ADASYN : Over-sample using ADASYN.
@@ -527,13 +492,13 @@ class SparseSVMSMOTE(SparseBaseSMOTE):
     >>> from collections import Counter
     >>> from sklearn.datasets import make_classification
     >>> from imblearn.over_sampling import \
-SparseSVMSMOTE # doctest: +NORMALIZE_WHITESPACE
+SVMSMOTE # doctest: +NORMALIZE_WHITESPACE
     >>> X, y = make_classification(n_classes=2, class_sep=2,
     ... weights=[0.1, 0.9], n_informative=3, n_redundant=1, flip_y=0,
     ... n_features=20, n_clusters_per_class=1, n_samples=1000, random_state=10)
     >>> print('Original dataset shape %s' % Counter(y))
     Original dataset shape Counter({{1: 900, 0: 100}})
-    >>> sm = SparseSVMSMOTE(random_state=42)
+    >>> sm = SVMSMOTE(random_state=42)
     >>> X_res, y_res = sm.fit_resample(X, y)
     >>> print('Resampled dataset shape %s' % Counter(y_res))
     Resampled dataset shape Counter({{0: 900, 1: 900}})
@@ -548,7 +513,7 @@ SparseSVMSMOTE # doctest: +NORMALIZE_WHITESPACE
                  m_neighbors=10,
                  svm_estimator=None,
                  out_step=0.5):
-        super(SparseSVMSMOTE, self).__init__(
+        super(SVMSMOTE, self).__init__(
             sampling_strategy=sampling_strategy, random_state=random_state,
             k_neighbors=k_neighbors, n_jobs=n_jobs, ratio=None)
         self.m_neighbors = m_neighbors
@@ -556,7 +521,7 @@ SparseSVMSMOTE # doctest: +NORMALIZE_WHITESPACE
         self.out_step = out_step
 
     def _validate_estimator(self):
-        super(SparseSVMSMOTE, self)._validate_estimator()
+        super(SVMSMOTE, self)._validate_estimator()
         self.nn_m_ = check_neighbors_object(
             'k_neighbors', self.k_neighbors, additional_neighbor=1)
         self.nn_m_.set_params(**{'n_jobs': self.n_jobs})
@@ -660,7 +625,7 @@ SparseSVMSMOTE # doctest: +NORMALIZE_WHITESPACE
 @Substitution(
     sampling_strategy=BaseOverSampler._sampling_strategy_docstring,
     random_state=_random_state_docstring)
-class SparseSMOTE(SparseSVMSMOTE, SparseBorderlineSMOTE):
+class SparseSMOTE(SVMSMOTE, BorderlineSMOTE):
     """Class to perform over-sampling using SMOTE.
 
     This object is an implementation of SMOTE - Synthetic Minority
@@ -733,6 +698,8 @@ class SparseSMOTE(SparseSVMSMOTE, SparseBorderlineSMOTE):
 
     See also
     --------
+    SMOTENC : Over-sample using SMOTE for continuous and categorical features.
+
     BorderlineSMOTE : Over-sample using the borderline-SMOTE variant.
 
     SVMSMOTE : Over-sample using the SVM-SMOTE variant.
@@ -751,13 +718,13 @@ class SparseSMOTE(SparseSVMSMOTE, SparseBorderlineSMOTE):
     >>> from collections import Counter
     >>> from sklearn.datasets import make_classification
     >>> from imblearn.over_sampling import \
-SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
+SMOTE # doctest: +NORMALIZE_WHITESPACE
     >>> X, y = make_classification(n_classes=2, class_sep=2,
     ... weights=[0.1, 0.9], n_informative=3, n_redundant=1, flip_y=0,
     ... n_features=20, n_clusters_per_class=1, n_samples=1000, random_state=10)
     >>> print('Original dataset shape %s' % Counter(y))
     Original dataset shape Counter({{1: 900, 0: 100}})
-    >>> sm = SparseSMOTE(random_state=42)
+    >>> sm = SMOTE(random_state=42)
     >>> X_res, y_res = sm.fit_resample(X, y)
     >>> print('Resampled dataset shape %s' % Counter(y_res))
     Resampled dataset shape Counter({{0: 900, 1: 900}})
@@ -799,12 +766,12 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
                               'SVMSMOTE instead.', DeprecationWarning)
 
             if self.kind == 'borderline1' or self.kind == 'borderline2':
-                self._sample = types.MethodType(SparseBorderlineSMOTE._sample, self)
+                self._sample = types.MethodType(BorderlineSMOTE._sample, self)
                 self.kind = ('borderline-1' if self.kind == 'borderline1'
                              else 'borderline-2')
 
             elif self.kind == 'svm':
-                self._sample = types.MethodType(SparseSVMSMOTE._sample, self)
+                self._sample = types.MethodType(SVMSMOTE._sample, self)
 
                 if self.out_step == 'deprecated':
                     self.out_step = 0.5
@@ -841,48 +808,27 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
                 self.nn_m_.set_params(**{'n_jobs': self.n_jobs})
 
     # FIXME: to be removed in 0.6
-    def _fit_resample(self, X, y, no_need_insert_array=[]):
+    def _fit_resample(self, X, y):
         self._validate_estimator()
-        return self._sample(X, y, no_need_insert_array)
+        return self._sample(X, y)
 
-    def _sample(self, X, y, no_need_insert_array=[]):
+    def _sample(self, X, y):
         # FIXME: uncomment in version 0.6
         # self._validate_estimator()
 
-        # original result: 0.805
-        # zero_num = len(X[X == 0])
-        # num = len(X)*len(X[0])
-        # dataset_sparse_ratio = zero_num*1.0/num
-
-        no_need_insert_array = detect_one_hot(X)
-        # print(no_need_insert_array)
         X_resampled = X.copy()
         y_resampled = y.copy()
 
         for class_sample, n_samples in self.sampling_strategy_.items():
             if n_samples == 0:
                 continue
-            # get all the minority instances as X_class
             target_class_indices = np.flatnonzero(y == class_sample)
             X_class = safe_indexing(X, target_class_indices)
 
-            # like adasyn result:
-            exist = (X_class != 0) * 1.0
-            factor = np.ones(X_class.shape[1])
-            res = np.dot(exist, factor)
-            # logsum = 0
-            num = len(X_class[0])
-            # for i in range(len(res)):
-            #     logsum += log(res[i]/num + 1)
-            sum_instance_sparse_ratio = np.sum(res/num)
-
             self.nn_k_.fit(X_class)
-            # get all the 5 neighbor minority of specific instance
             nns = self.nn_k_.kneighbors(X_class, return_distance=False)[:, 1:]
-            # X_new, y_new = self._make_samples(X_class, y.dtype, class_sample,
-            #                                   X_class, nns, n_samples, no_need_insert_array, 1.0, logsum)
             X_new, y_new = self._make_samples(X_class, y.dtype, class_sample,
-                                              X_class, nns, n_samples, no_need_insert_array, 1.0, sum_instance_sparse_ratio)
+                                              X_class, nns, n_samples, 1.0)
 
             if sparse.issparse(X_new):
                 X_resampled = sparse.vstack([X_resampled, X_new])
@@ -892,3 +838,223 @@ SparseSMOTE # doctest: +NORMALIZE_WHITESPACE
 
         return X_resampled, y_resampled
 
+
+class SMOTENC(SparseSMOTE):
+    """Synthetic Minority Over-sampling Technique for Nominal and Continuous
+    (SMOTE-NC).
+
+    Unlike :class:`SMOTE`, SMOTE-NC for dataset containing continuous and
+    categorical features.
+
+    Read more in the :ref:`User Guide <smote_adasyn>`.
+
+    Parameters
+    ----------
+    categorical_features : ndarray, shape (n_cat_features,) or (n_features,)
+        Specified which features are categorical. Can either be:
+
+        - array of indices specifying the categorical features;
+        - mask array of shape (n_features, ) and ``bool`` dtype for which
+          ``True`` indicates the categorical features.
+
+    {sampling_strategy}
+
+    {random_state}
+
+    k_neighbors : int or object, optional (default=5)
+        If ``int``, number of nearest neighbours to used to construct synthetic
+        samples.  If object, an estimator that inherits from
+        :class:`sklearn.neighbors.base.KNeighborsMixin` that will be used to
+        find the k_neighbors.
+
+    n_jobs : int, optional (default=1)
+        The number of threads to open if possible.
+
+    Notes
+    -----
+    See the original paper [1]_ for more details.
+
+    Supports mutli-class resampling. A one-vs.-rest scheme is used as
+    originally proposed in [1]_.
+
+    See
+    :ref:`sphx_glr_auto_examples_over-sampling_plot_comparison_over_sampling.py`,
+    and :ref:`sphx_glr_auto_examples_over-sampling_plot_smote.py`.
+
+    See also
+    --------
+    SMOTE : Over-sample using SMOTE.
+
+    SVMSMOTE : Over-sample using SVM-SMOTE variant.
+
+    BorderlineSMOTE : Over-sample using Borderline-SMOTE variant.
+
+    ADASYN : Over-sample using ADASYN.
+
+    References
+    ----------
+    .. [1] N. V. Chawla, K. W. Bowyer, L. O.Hall, W. P. Kegelmeyer, "SMOTE:
+       synthetic minority over-sampling technique," Journal of artificial
+       intelligence research, 321-357, 2002.
+
+    Examples
+    --------
+
+    >>> from collections import Counter
+    >>> from numpy.random import RandomState
+    >>> from sklearn.datasets import make_classification
+    >>> from imblearn.over_sampling import SMOTENC
+    >>> X, y = make_classification(n_classes=2, class_sep=2,
+    ... weights=[0.1, 0.9], n_informative=3, n_redundant=1, flip_y=0,
+    ... n_features=20, n_clusters_per_class=1, n_samples=1000, random_state=10)
+    >>> print('Original dataset shape (%s, %s)' % X.shape)
+    Original dataset shape (1000, 20)
+    >>> print('Original dataset samples per class {}'.format(Counter(y)))
+    Original dataset samples per class Counter({1: 900, 0: 100})
+    >>> # simulate the 2 last columns to be categorical features
+    >>> X[:, -2:] = RandomState(10).randint(0, 4, size=(1000, 2))
+    >>> sm = SMOTENC(random_state=42, categorical_features=[18, 19])
+    >>> X_res, y_res = sm.fit_resample(X, y)
+    >>> print('Resampled dataset samples per class {}'.format(Counter(y_res)))
+    Resampled dataset samples per class Counter({0: 900, 1: 900})
+
+    """
+
+    def __init__(self, categorical_features, sampling_strategy='auto',
+                 random_state=None, k_neighbors=5, n_jobs=1):
+        super(SMOTENC, self).__init__(sampling_strategy=sampling_strategy,
+                                      random_state=random_state,
+                                      k_neighbors=k_neighbors,
+                                      ratio=None)
+        self.categorical_features = categorical_features
+
+    @staticmethod
+    def _check_X_y(X, y):
+        """Overwrite the checking to let pass some string for categorical
+        features.
+        """
+        y, binarize_y = check_target_type(y, indicate_one_vs_all=True)
+        X, y = check_X_y(X, y, accept_sparse=['csr', 'csc'], dtype=None)
+        return X, y, binarize_y
+
+    def _validate_estimator(self):
+        super(SMOTENC, self)._validate_estimator()
+        categorical_features = np.asarray(self.categorical_features)
+        if categorical_features.dtype.name == 'bool':
+            self.categorical_features_ = np.flatnonzero(categorical_features)
+        else:
+            if any([cat not in np.arange(self.n_features_)
+                    for cat in categorical_features]):
+                raise ValueError(
+                    'Some of the categorical indices are out of range. Indices'
+                    ' should be between 0 and {}'.format(self.n_features_))
+            self.categorical_features_ = categorical_features
+        self.continuous_features_ = np.setdiff1d(np.arange(self.n_features_),
+                                                 self.categorical_features_)
+
+    def _fit_resample(self, X, y):
+        self.n_features_ = X.shape[1]
+        self._validate_estimator()
+
+        # compute the median of the standard deviation of the minority class
+        target_stats = Counter(y)
+        class_minority = min(target_stats, key=target_stats.get)
+
+        X_continuous = X[:, self.continuous_features_]
+        X_continuous = check_array(X_continuous, accept_sparse=['csr', 'csc'])
+        X_minority = safe_indexing(X_continuous,
+                                   np.flatnonzero(y == class_minority))
+
+        if sparse.issparse(X):
+            if X.format == 'csr':
+                _, var = csr_mean_variance_axis0(X_minority)
+            else:
+                _, var = csc_mean_variance_axis0(X_minority)
+        else:
+            var = X_minority.var(axis=0)
+        self.median_std_ = np.median(np.sqrt(var))
+
+        X_categorical = X[:, self.categorical_features_]
+        if X_continuous.dtype.name != 'object':
+            dtype_ohe = X_continuous.dtype
+        else:
+            dtype_ohe = np.float64
+        self.ohe_ = OneHotEncoder(sparse=True, handle_unknown='ignore',
+                                  dtype=dtype_ohe)
+        # the input of the OneHotEncoder needs to be dense
+        X_ohe = self.ohe_.fit_transform(
+            X_categorical.toarray() if sparse.issparse(X_categorical)
+            else X_categorical)
+
+        # we can replace the 1 entries of the categorical features with the
+        # median of the standard deviation. It will ensure that whenever
+        # distance is computed between 2 samples, the difference will be equal
+        # to the median of the standard deviation as in the original paper.
+        X_ohe.data = (np.ones_like(X_ohe.data, dtype=X_ohe.dtype) *
+                      self.median_std_ / 2)
+        X_encoded = sparse.hstack((X_continuous, X_ohe), format='csr')
+
+        X_resampled, y_resampled = super(SMOTENC, self)._fit_resample(
+            X_encoded, y)
+
+        # reverse the encoding of the categorical features
+        X_res_cat = X_resampled[:, self.continuous_features_.size:]
+        X_res_cat.data = np.ones_like(X_res_cat.data)
+        X_res_cat_dec = self.ohe_.inverse_transform(X_res_cat.toarray())
+
+        if sparse.issparse(X):
+            X_resampled = sparse.hstack(
+                (X_resampled[:, :self.continuous_features_.size],
+                 X_res_cat_dec), format='csr'
+            )
+        else:
+            X_resampled = np.hstack(
+                (X_resampled[:, :self.continuous_features_.size].toarray(),
+                 X_res_cat_dec)
+            )
+
+        indices_reordered = np.argsort(
+            np.hstack((self.continuous_features_, self.categorical_features_))
+        )
+        if sparse.issparse(X_resampled):
+            # the matrix is supposed to be in the CSR format after the stacking
+            col_indices = X_resampled.indices.copy()
+            for idx, col_idx in enumerate(indices_reordered):
+                mask = X_resampled.indices == col_idx
+                col_indices[mask] = idx
+            X_resampled.indices = col_indices
+        else:
+            X_resampled = X_resampled[:, indices_reordered]
+
+        return X_resampled, y_resampled
+
+    def _generate_sample(self, X, nn_data, nn_num, row, col, step):
+        """Generate a synthetic sample with an additional steps for the
+        categorical features.
+
+        Each new sample is generated the same way than in SMOTE. However, the
+        categorical features are mapped to the most frequent nearest neighbors
+        of the majority class.
+        """
+        rng = check_random_state(self.random_state)
+        sample = super(SMOTENC, self)._generate_sample(X, nn_data, nn_num,
+                                                       row, col, step)
+        # To avoid conversion and since there is only few samples used, we
+        # convert those samples to dense array.
+        sample = (sample.toarray().squeeze()
+                  if sparse.issparse(sample) else sample)
+        all_neighbors = nn_data[nn_num[row]]
+        all_neighbors = (all_neighbors.toarray()
+                         if sparse.issparse(all_neighbors) else all_neighbors)
+
+        categories_size = ([self.continuous_features_.size] +
+                           [cat.size for cat in self.ohe_.categories_])
+        for start_idx, end_idx in zip(np.cumsum(categories_size)[:-1],
+                                      np.cumsum(categories_size)[1:]):
+            col_max = all_neighbors[:, start_idx:end_idx].sum(axis=0)
+            # tie breaking argmax
+            col_sel = rng.choice(col_max == col_max.max())
+            sample[start_idx:end_idx] = 0
+            sample[start_idx + col_sel] = 1
+
+        return sparse.csr_matrix(sample) if sparse.issparse(X) else sample

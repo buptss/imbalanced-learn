@@ -36,7 +36,10 @@ SHOW_AUC_ROC_PLOT = False
 SHOW_TSNE = False
 # init sample method
 # sample_methods = ['Sparse SMOTE']
-sample_methods = ['SMOTE', 'Sparse SMOTE', 'random', 'No Sample']
+# sample_methods = ['SMOTE', 'Sparse SMOTE', 'random']
+sample_methods = ['SMOTE', 'ADASYN', 'random', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2', 'SVMSMOTE']
+# sample_methods = ['SMOTE', 'ADASYN', 'SMOTEBorderline-1', 'SMOTEBorderline-2', 'SVMSMOTE']
+# sample_methods = ['SMOTE', 'Sparse SMOTE', 'random', 'No Sample']
 # sample_methods = ['SMOTE']
 # sample_methods = ['random', 'SMOTE', 'Sparse SMOTE', 'SMOTEBorderline-1', 'SMOTEBorderline-2',
 #                   'SVMSMOTE', 'ADASYN', 'No Sample']
@@ -45,12 +48,16 @@ sample_methods = ['SMOTE', 'Sparse SMOTE', 'random', 'No Sample']
 # datasets = ['car_eval_4']
 # datasets = ["coil_2000"]
 # sparsity ratio >= 0.5
-datasets = ["coil_2000"]
+# datasets = ["solar_flare_m0"]
+# datasets = ["coil_2000", "solar_flare_m0"]
+# datasets = ["coil_2000"]
+# datasets = ["solar_flare_m0"]
+# datasets = ["solar_flare_m0", 'ecoli']
 # datasets = ["arrhythmia", "webpage"]
 # datasets = ["car_eval_34", "coil_2000", 'arrhythmia', 'solar_flare_m0','car_eval_4', 'webpage']
 # datasets = ["car_eval_34", "coil_2000", 'solar_flare_m0','car_eval_4']
 
-# 0.2 <= sparsity ratio < 0.5
+# 0.2 <= sparsity ratio < 0.5å
 # datasets = ["abalone", "optical_digits", "sick_euthyroid", "thyroid_sick", "abalone_19"]
 
 # sparsity ratio < 0.2
@@ -62,10 +69,10 @@ datasets = ["coil_2000"]
 
 
 # all
-# datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
-#          'car_eval_34', 'isolet', 'us_crime', 'yeast_ml8', 'scene', 'libras_move', 'thyroid_sick', 'coil_2000',
-#          'arrhythmia', 'solar_flare_m0', 'oil', 'car_eval_4', 'wine_quality', 'letter_img', 'yeast_me2',
-#          'webpage', 'ozone_level', 'mammography', 'protein_homo', 'abalone_19']
+datasets = ['ecoli', 'optical_digits', 'satimage', 'pen_digits', 'abalone', 'sick_euthyroid', 'spectrometer',
+         'car_eval_34', 'isolet', 'us_crime', 'yeast_ml8', 'scene', 'libras_move', 'thyroid_sick', 'coil_2000',
+         'arrhythmia', 'solar_flare_m0', 'oil', 'car_eval_4', 'wine_quality', 'letter_img', 'yeast_me2',
+         'webpage', 'ozone_level', 'mammography', 'protein_homo', 'abalone_19']
 
 
 def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_method):
@@ -88,14 +95,16 @@ def statistics_sample_num(train_X, train_y, X_resampled, y_resampled, sample_met
 
 
 # handle each data set
-def process(object, sample_methods):
+def process(object, sample_methods, dataset):
     train_X, train_y, test_X, test_y = object['train_X'], object['train_y'], object['test_X'], object['test_y']
     metrics_dict = {}
     time_info = {}
     n_estimators = 2000
-    epochs = n_estimators
+    # eval_metric = "logloss"
+    eval_metric = "auc"
+    # epochs = n_estimators
     # epochs = len(results['validation_0']['logloss'])
-    x_axis = range(0, epochs)
+    # x_axis = range(0, epochs)
     fig, ax = pyplot.subplots()
 
     if SHOW_TSNE:
@@ -136,24 +145,36 @@ def process(object, sample_methods):
         # train model
         # gbm.fit(X_resampled, y_resampled, eval_set=eval_set,
         #         eval_metric=["logloss"], verbose=False)
+        # gbm.fit(X_resampled, y_resampled, eval_set=eval_set, early_stopping_rounds=10,
+        #         eval_metric=["auc"], verbose=False)
         gbm.fit(X_resampled, y_resampled, eval_set=eval_set,
-                eval_metric=["auc"], verbose=False)
+                eval_metric=[eval_metric], verbose=False)
         #
         train_precision, train_recall, train_f1, train_gmean, train_auc_roc, train_auc_pr, train_fpr, train_tpr, train_auc_score\
             = evaluate(train_X, train_y, gbm)
         # evaluate on test set
         precision, recall, f1, gmean, auc_roc, auc_pr, fpr, tpr, auc_score = evaluate(test_X, test_y, gbm)
         # print train_auc_roc auc_roc
-        print(sample_method, train_auc_roc, auc_roc, train_auc_score, auc_score)
+        # print(sample_method, train_auc_roc, auc_roc, train_auc_score, auc_score)
         results = gbm.evals_result()
 
-        ax.plot(x_axis, results['validation_0']['auc'], label=sample_method+'_Train')
-        ax.plot(x_axis, results['validation_1']['auc'], label=sample_method+'_Test')
+        # epochs = n_estimators
+        epochs = len(results['validation_0'][eval_metric])
+        x_axis = range(0, epochs)
+        # Train AUC
+        # ax.plot(x_axis, results['validation_0'][eval_metric], label=sample_method+'_Train')
+        # Test AUC
+        ax.plot(x_axis, results['validation_1'][eval_metric], label=sample_method+'_Test')
+        # box = ax.get_position()
+        # ax.set_position([box.x0, box.y0 + 0.1 * box.height, box.width, box.height])
+        # ax.legend(loc='upper left', bbox_to_anchor=(1.0, 0.8))
         # ax.plot(x_axis, results['validation_0']['logloss'], label='Train')
         # ax.plot(x_axis, results['validation_1']['logloss'], label='Test')
+        ax.plot()
         ax.legend()
-        pyplot.ylabel('Classification AUC')
-        pyplot.title('XGBoost Classification AUC')
+        pyplot.grid()
+        pyplot.ylabel('Classification ' + eval_metric)
+        pyplot.title('XGBoost Classification ' + eval_metric)
 
         if SHOW_AUC_ROC_PLOT:
             plt.plot(fpr, tpr, lw=1, alpha=0.3,
@@ -163,7 +184,7 @@ def process(object, sample_methods):
     if SHOW_TSNE:
         # plt.show()
         plt.savefig("tsne.pdf")
-    pyplot.savefig("result.pdf")
+    pyplot.savefig("./result/" + dataset + ".pdf")
     df = pd.DataFrame(metrics_dict)
     # df.set_index(['precision', 'recall', 'gmean', 'f1'], inplace=True)
     df = df.T
@@ -241,14 +262,16 @@ def oversample(x, y, method):
 # function: evaluate the oversample effects on the test set
 def evaluate(test_X, test_y, model):
     # apply the model to the test and training data
-    predicted_test_y = model.predict(test_X)
-    # predicted_train_y = gbm.predict(train_X)
+    # probability result
+    predicted_test_y = model.predict_proba(test_X)[:, 1]
+    # binary result
+    predicted_test_y_binary = model.predict(test_X)
 
     # print("precision rate/recall rate/f1 score/G-means")
-    precision = precision_score(test_y, predicted_test_y)
-    recall = recall_score(test_y, predicted_test_y)
-    f1 = f1_score(test_y, predicted_test_y)
-    gmean = geometric_mean_score(test_y, predicted_test_y)
+    precision = precision_score(test_y, predicted_test_y_binary)
+    recall = recall_score(test_y, predicted_test_y_binary)
+    f1 = f1_score(test_y, predicted_test_y_binary)
+    gmean = geometric_mean_score(test_y, predicted_test_y_binary)
     auc_roc = roc_auc_score(test_y, predicted_test_y)
     auc_pr = average_precision_score(test_y, predicted_test_y)
     fpr, tpr, thresholds = roc_curve(test_y, predicted_test_y)
@@ -287,7 +310,7 @@ if __name__ == '__main__':
             print(r"\multirow{6}{*}{\textbf{"+dataset+"}}")
         # object = fetch_datasets(data_home='./data/')[dataset]
         object = np.load('./data/zendo_stable/'+dataset+'.npz')
-        time_info = process(object, sample_methods)
+        time_info = process(object, sample_methods, dataset)
         time_dict[dataset] = time_info
         if SHOW_METRICS:
             print("\hline")
