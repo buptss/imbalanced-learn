@@ -58,6 +58,14 @@ class SparseBaseSMOTE(BaseOverSampler):
             'k_neighbors', self.k_neighbors, additional_neighbor=1)
         self.nn_k_.set_params(**{'n_jobs': self.n_jobs})
 
+
+    def _calc_instance_sparseratio(self, X, row):
+        # calc the Sparseness of an instance
+        num = len(X[row][(X[row] == 0.0)])
+        InstanceSparseRatio = num * 1.0 / len(X[row])
+        return InstanceSparseRatio
+
+
     def _make_samples(self,
                       X,
                       y_dtype,
@@ -362,6 +370,15 @@ BorderlineSMOTE # doctest: +NORMALIZE_WHITESPACE
                 continue
             target_class_indices = np.flatnonzero(y == class_sample)
             X_class = safe_indexing(X, target_class_indices)
+
+            exist = (X_class != 0) * 1.0
+            factor = np.ones(X_class.shape[1])
+            res = np.dot(exist, factor)
+            # logsum = 0
+            num = len(X_class[0])
+            # for i in range(len(res)):
+            #     logsum += log(res[i]/num + 1)
+            sum_instance_sparse_ratio = np.sum(res/num)
 
             self.nn_m_.fit(X)
             danger_index = self._in_danger_noise(
